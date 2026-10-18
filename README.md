@@ -1,6 +1,6 @@
 # Volume control floating window（桌面悬浮音量控制器）
 
-> 项目仓库：https://github.com/641823371/LOBASE
+
 
 一个常驻桌面的极简风格 Windows 音量控制器，类似「桌面宠物」：无边框、圆角、白底黑线，始终置顶，不出现在任务栏。可分别对最多 3 个输出设备进行音量调节。
 
