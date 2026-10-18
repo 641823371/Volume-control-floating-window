@@ -1,4 +1,5 @@
 # Volume control floating window（桌面悬浮音量控制器）
+<img width="446" height="149" alt="image" src="https://github.com/user-attachments/assets/57deddda-aef3-4c0c-8336-dcf5589f5be1" />
 
 一个常驻桌面的极简风格 Windows 音量控制器，类似「桌面宠物」：无边框、圆角、白底黑线，始终置顶，不出现在任务栏。可分别对最多 3 个输出设备进行音量调节。
 
