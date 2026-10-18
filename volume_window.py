@@ -119,10 +119,17 @@ class VolumeWindow(QWidget):
 
     def _apply_config(self) -> None:
         self._apply_window_flags()
-        self.setGeometry(
+        geom = QRect(
             self._config.window_x, self._config.window_y,
             self._config.window_width, self._config.window_height,
         )
+        # 防止窗口被历史坐标存到屏幕外（多显示器/分辨率变化常见），
+        # 导致“程序在跑但看不到”而被误判为打不开。若窗口完全不在任何屏幕内则拉回可见位置。
+        screens = QApplication.screens()
+        on_screen = any(s.availableGeometry().intersects(geom) for s in screens)
+        if not on_screen:
+            geom.moveTo(200, 200)
+        self.setGeometry(geom)
         self.setWindowOpacity(self._config.opacity)
 
     def _init_bindings(self) -> None:

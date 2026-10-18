@@ -5,10 +5,30 @@
 
 from __future__ import annotations
 
+import os
 import sys
+import traceback
 
 from config import load_config
 from audio_manager import AudioManager
+
+
+def _show_crash(message: str) -> None:
+    """在启动失败时尽量用可见方式告知用户（Qt 对话框优先，回退到 Win32 弹窗）。"""
+    try:
+        from PySide6.QtWidgets import QApplication, QMessageBox
+
+        app = QApplication.instance() or QApplication(sys.argv)
+        QMessageBox.critical(None, "桌面音量控制器 - 启动失败", message)
+        return
+    except Exception:
+        pass
+    try:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(0, message, "桌面音量控制器 - 启动失败", 0x10)
+    except Exception:
+        pass
 
 
 def _run_gui() -> int:
@@ -37,7 +57,22 @@ def _run_gui() -> int:
 
 
 def main() -> int:
-    return _run_gui()
+    try:
+        return _run_gui()
+    except Exception:
+        tb = traceback.format_exc()
+        log_path = os.path.join(
+            os.environ.get("TEMP", "."), "volume_controller_crash.log"
+        )
+        try:
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(tb)
+        except Exception:
+            log_path = "(无法写入日志)"
+        _show_crash(
+            "程序启动时发生错误：\n\n" + tb + "\n\n（详细日志已写入 " + log_path + "）"
+        )
+        return 1
 
 
 if __name__ == "__main__":
