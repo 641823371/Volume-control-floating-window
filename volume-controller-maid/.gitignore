@@ -1,0 +1,28 @@
+# --- Python 字节码 / 缓存 ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# --- 依赖镜像（运行时不需要，体积大；第三方用 pip install 安装） ---
+_deps/
+
+# --- 虚拟环境 ---
+.venv/
+venv/
+env/
+
+# --- 编辑器 / IDE ---
+.vscode/
+.idea/
+*.swp
+
+# --- 日志 ---
+*.log
+
+# --- 本地配置兜底（程序默认写入 %APPDATA%，此处仅防止程序目录回退污染仓库） ---
+config.json
+
+# --- 系统 / OS 文件 ---
+.DS_Store
+Thumbs.db
