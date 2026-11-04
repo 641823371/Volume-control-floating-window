@@ -53,10 +53,12 @@ class DeviceSelector(QWidget):
         self._click_timer.timeout.connect(self._open_popup)
         self._suppress_click: bool = False
 
+        self._font_size = 11  # 设备名/箭头字号基准（最小窗口尺寸时），随浮窗缩放
         self._label = QLabel("选择设备", self)
         self._label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self._chevron = QLabel("▾", self)
         self._chevron.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._chevron.setStyleSheet(f"font-size:{self._font_size}px;")
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 0, 8, 0)
@@ -130,7 +132,13 @@ class DeviceSelector(QWidget):
         available = max(20, self.width() - 34)
         self._label.setText(metrics.elidedText(text, Qt.ElideRight, available))
         color = "#9aa7b5" if (self._unavailable or not self._current_name) else "#2b3a4a"
-        self._label.setStyleSheet(f"color:{color};")
+        self._label.setStyleSheet(f"color:{color}; font-size:{self._font_size}px;")
+
+    def set_label_font_size(self, size: int) -> None:
+        """按浮窗缩放比例设置设备名/箭头字号。"""
+        self._font_size = max(1, int(size))
+        self._chevron.setStyleSheet(f"font-size:{self._font_size}px;")
+        self._refresh_text()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -353,10 +361,11 @@ class VolumeSlider(QWidget):
         self._slider.sliderReleased.connect(self._on_released)
         self._slider.toggleMuteRequested.connect(self.muteToggleRequested.emit)
 
+        self._font_size = 10  # 音量数值字号基准（最小窗口尺寸时），随浮窗缩放
         self._label = QLabel("", self)
         self._label.setFixedWidth(34)
         self._label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self._label.setStyleSheet("color:#8aa7c6; font-size:10px;")
+        self._label.setStyleSheet(f"color:#8aa7c6; font-size:{self._font_size}px;")
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0,0, 0)
@@ -408,6 +417,11 @@ class VolumeSlider(QWidget):
 
     def set_enabled(self, enabled: bool) -> None:
         self._slider.setEnabled(enabled)
+
+    def set_label_font_size(self, size: int) -> None:
+        """按浮窗缩放比例设置音量数值字号。"""
+        self._font_size = max(1, int(size))
+        self._label.setStyleSheet(f"color:#8aa7c6; font-size:{self._font_size}px;")
 
 
 class _DevicePopup(QFrame):

@@ -37,6 +37,8 @@ class AppConfig:
     device_ids: List[str] = field(
         default_factory=lambda: [FALLBACK_DEVICE_ID] * ROW_COUNT
     )
+    title_text: str = "音量浮窗"
+    subtitle_text: str = "独立音频通道"
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为可 JSON 序列化的字典。"""
@@ -49,6 +51,8 @@ class AppConfig:
             "always_on_top": self.always_on_top,
             "locked": self.locked,
             "device_ids": self.device_ids,
+            "title_text": self.title_text,
+            "subtitle_text": self.subtitle_text,
         }
 
     @classmethod
@@ -70,6 +74,8 @@ class AppConfig:
             always_on_top=bool(data.get("always_on_top", True)),
             locked=bool(data.get("locked", False)),
             device_ids=normalized,
+            title_text=str(data.get("title_text", "音量浮窗")),
+            subtitle_text=str(data.get("subtitle_text", "独立音频通道")),
         )
 
 

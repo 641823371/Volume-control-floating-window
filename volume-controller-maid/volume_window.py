@@ -15,7 +15,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QMenu, QSystemTrayIcon, QApplication,
-    QToolTip, QLabel,
+    QToolTip, QLabel, QLineEdit, QPushButton,
 )
 
 from config import AppConfig, save_config
@@ -34,6 +34,98 @@ class _Row:
         self.slider = slider
 
 
+class _EditableLabel(QLabel):
+    """可双击编辑文字的标签：双击弹出「输入框 + 确定按钮」。
+
+    回车或点击「确定」按钮 → 保存修改；点击浮窗其他地方（背景/其他控件）
+    → 放弃修改并关闭编辑框。仅响应双击，单击/拖拽仍交由父窗口处理。
+    """
+
+    def __init__(self, text: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(text, parent)
+        self._editor: Optional[QWidget] = None   # 编辑容器（输入框 + 确定按钮）
+        self._line: Optional[QLineEdit] = None
+        self._commit: Optional[callable] = None
+        self.setCursor(Qt.IBeamCursor)
+
+    def set_commit_callback(self, cb: callable) -> None:
+        self._commit = cb
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802  (Qt 虚函数)
+        self._start_edit()
+        event.accept()
+
+    def _start_edit(self) -> None:
+        if self._editor is not None:
+            return
+        container = QWidget(self)
+        container.setGeometry(self.rect())
+        container.setStyleSheet("background:transparent;")
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(3)
+
+        line = QLineEdit(self.text(), container)
+        # 复用标签当前的动态字号样式，再叠加白底蓝边
+        line.setStyleSheet(
+            self.styleSheet()
+            + "background:#ffffff;border:1px solid #5b87c4;border-radius:4px;"
+            "padding:1px 4px;"
+        )
+        line.returnPressed.connect(self._save_edit)
+        line.editingFinished.connect(self._finish_edit)
+
+        confirm = QPushButton("√", container)
+        confirm.setFixedWidth(26)
+        # 关键：点击按钮不抢焦点，避免触发输入框失焦而误取消；
+        # 保存逻辑完全交给 clicked -> _save_edit。
+        confirm.setFocusPolicy(Qt.NoFocus)
+        confirm.setStyleSheet(
+            "background:#3f74b8;color:#ffffff;border:none;border-radius:4px;"
+            "font-size:14px;padding:1px 2px;"
+        )
+        confirm.setToolTip("确认保存 (Enter)")
+        confirm.clicked.connect(self._save_edit)
+
+        layout.addWidget(line, 1)
+        layout.addWidget(confirm, 0)
+        container.show()
+        line.setFocus()
+        line.selectAll()
+        self._editor = container
+        self._line = line
+
+    def _save_edit(self) -> None:
+        """回车或点击「确定」：提交并保存修改。"""
+        if self._editor is None or self._line is None:
+            return
+        text = self._line.text().strip()
+        if text:
+            self.setText(text)
+            if self._commit is not None:
+                self._commit(text)
+        self._editor.deleteLater()
+        self._editor = None
+        self._line = None
+
+    def _finish_edit(self) -> None:
+        """输入框失焦时触发（「确定」按钮为 NoFocus，不会触发此处）。
+
+        失焦视为放弃修改：不更新文字、不回调。
+        """
+        if self._editor is None:
+            return
+        self.cancel_edit()
+
+    def cancel_edit(self) -> None:
+        """放弃当前编辑并关闭编辑框：不更新文字、不回调。"""
+        if self._editor is None:
+            return
+        self._editor.deleteLater()
+        self._editor = None
+        self._line = None
+
+
 class VolumeWindow(QWidget):
     """桌面悬浮音量控制器主窗口。"""
 
@@ -50,6 +142,18 @@ class VolumeWindow(QWidget):
     ACCENT_DARK = "#2f5a91"
     MASCOT_FILENAME = "deepseek_maid.png"
     APP_TITLE = "音量浮窗"
+
+    # 标题/副标题字号：以最小窗口尺寸为基准，缩放时按面积比例平滑变化。
+    # MIN 为最小尺寸时的固定下限；MAX 仅作极端放大时的兜底，正常缩放到不了。
+    TITLE_FONT_MIN = 15
+    SUBTITLE_FONT_MIN = 12
+    TITLE_FONT_MAX = 44
+    SUBTITLE_FONT_MAX = 34
+    # 设备框（设备名/箭头）与音量数值的字号基准，同样随窗口缩放
+    DEVICE_FONT_MIN = 11
+    VOLUME_FONT_MIN = 10
+    DEVICE_FONT_MAX = 30
+    VOLUME_FONT_MAX = 28
 
     def __init__(self, config: AppConfig, audio: AudioManager) -> None:
         super().__init__()
@@ -163,24 +267,89 @@ class VolumeWindow(QWidget):
         return QIcon(pixmap)
 
     def _build_header(self) -> QWidget:
-        """顶部标题栏：主题标题 + 副标题（不再含立绘，立绘已移至左侧）。"""
+        """顶部标题栏：主题标题 + 副标题；两者均可双击修改文字并持久化。
+
+        字号不写死，交由 _update_fonts 按窗口缩放比例动态设定；
+        header 高度随内容自适应，避免放大时文字被裁切。
+        """
         header = QWidget(self)
-        header.setFixedHeight(38)
         layout = QVBoxLayout(header)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
-        title = QLabel(self.APP_TITLE, header)
-        title.setStyleSheet(
-            f"color:{self.ACCENT_DARK}; font-size:13px; font-weight:600;"
-            "letter-spacing:1px;"
-        )
-        subtitle = QLabel("独立音频通道", header)
-        subtitle.setStyleSheet("color:#8aa7c6; font-size:10px;")
+        title = _EditableLabel(self._config.title_text, header)
+        title.set_commit_callback(self._on_title_edited)
+        self._title_label = title
+
+        subtitle = _EditableLabel(self._config.subtitle_text, header)
+        subtitle.set_commit_callback(self._on_subtitle_edited)
+        self._subtitle_label = subtitle
 
         layout.addWidget(title)
         layout.addWidget(subtitle)
+        self._update_fonts()  # 以当前尺寸设定初始字号
         return header
+
+    def _update_fonts(self) -> None:
+        """按窗口缩放比例平滑调整标题/副标题字号。
+
+        以最小窗口尺寸（MIN_WIDTH × MIN_HEIGHT）为基准，ratio=1 时取下限
+        TITLE_FONT_MIN / SUBTITLE_FONT_MIN；窗口放大时字号随面积平方根等比
+        增大，缩小回最小尺寸时回到下限。上限仅作极端放大的兜底。
+        """
+        if not hasattr(self, "_title_label"):
+            return
+        import math
+        base_area = self.MIN_WIDTH * self.MIN_HEIGHT
+        cur_area = max(1, self.width() * self.height())
+        ratio = math.sqrt(cur_area / base_area)
+
+        title_size = max(
+            self.TITLE_FONT_MIN,
+            min(self.TITLE_FONT_MAX, int(round(self.TITLE_FONT_MIN * ratio))),
+        )
+        subtitle_size = max(
+            self.SUBTITLE_FONT_MIN,
+            min(self.SUBTITLE_FONT_MAX, int(round(self.SUBTITLE_FONT_MIN * ratio))),
+        )
+        self._title_label.setStyleSheet(
+            f"color:{self.ACCENT_DARK}; font-size:{title_size}px; font-weight:600;"
+            "letter-spacing:1px;"
+        )
+        self._subtitle_label.setStyleSheet(
+            f"color:#8aa7c6; font-size:{subtitle_size}px;"
+        )
+        # 字号变化后显式通知布局重算，使 header 高度自适应（避免放大裁切）
+        self._title_label.updateGeometry()
+        self._subtitle_label.updateGeometry()
+
+        # 设备框（设备名/箭头）与音量数值字号同步缩放
+        dev_size = max(
+            self.DEVICE_FONT_MIN,
+            min(self.DEVICE_FONT_MAX, int(round(self.DEVICE_FONT_MIN * ratio))),
+        )
+        vol_size = max(
+            self.VOLUME_FONT_MIN,
+            min(self.VOLUME_FONT_MAX, int(round(self.VOLUME_FONT_MIN * ratio))),
+        )
+        for row in self._rows:
+            row.selector.set_label_font_size(dev_size)
+            row.slider.set_label_font_size(vol_size)
+
+    def _on_title_edited(self, text: str) -> None:
+        """标题文字被双击修改后：写回配置并同步窗口/托盘标题。"""
+        self._config.title_text = text
+        save_config(self._config)
+        # APP_TITLE 用于窗口标题栏与托盘提示（程序名），此处同步以保持一致
+        self.APP_TITLE = text
+        self.setWindowTitle(text)
+        if self._tray is not None:
+            self._tray.setToolTip(text)
+
+    def _on_subtitle_edited(self, text: str) -> None:
+        """副标题文字被双击修改后：写回配置。"""
+        self._config.subtitle_text = text
+        save_config(self._config)
 
     def _apply_config(self) -> None:
         self._apply_window_flags()
@@ -196,6 +365,7 @@ class VolumeWindow(QWidget):
             geom.moveTo(200, 200)
         self.setGeometry(geom)
         self.setWindowOpacity(self._config.opacity)
+        self._update_fonts()  # 按初始尺寸设定字号
 
     def _init_bindings(self) -> None:
         """初始化每行绑定的设备：优先使用已保存配置，否则自动绑定前 N 个设备。"""
@@ -480,6 +650,7 @@ class VolumeWindow(QWidget):
                 new_y = geom.bottom() - new_h  # 下边缘锚定
 
         self.setGeometry(new_x, new_y, new_w, new_h)
+        self._update_fonts()  # 缩放时平滑调整字号
 
     # ---- 右键菜单 ----
     def _show_context_menu(self, global_pos: QPoint) -> None:
@@ -622,6 +793,18 @@ class VolumeWindow(QWidget):
 
     # ---- 全局事件过滤器（捕获任意子控件的右键） ----
     def eventFilter(self, obj, event) -> bool:
+        # 编辑标题/副标题过程中，点击浮窗其他地方（背景/其他控件）视为放弃修改：
+        # 直接关闭编辑框（cancel_edit），不依赖焦点机制，确保任何点击都能关闭。
+        # 点击落在编辑框内部（输入框或「确定」按钮）则不关闭，以便正常输入/确认。
+        if (
+            event.type() == QEvent.MouseButtonPress
+            and event.button() == Qt.LeftButton
+            and self.isAncestorOf(obj)
+        ):
+            for label in (self._title_label, self._subtitle_label):
+                editor = getattr(label, "_editor", None)
+                if editor is not None and obj is not editor and not editor.isAncestorOf(obj):
+                    label.cancel_edit()
         if (
             event.type() == QEvent.MouseButtonPress
             and event.button() == Qt.RightButton
